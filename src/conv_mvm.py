@@ -192,7 +192,7 @@ class quantized_conv(nn.Module):
             qa = STE_Quantize().apply(inputs, self.a_bits)
             """TODO: add stoch round? maybe as param to STE_quant?"""
 
-        if self.experiment_state == "inference" and self.num_subarrays > 0:
+        if self.experiment_state == "xbar_inference" and self.num_subarrays > 0:
             output, a_loss = self.inference_conv(qa, qw)     
         elif self.experiment_state == "PTQAT" and self.num_subarrays > 0:  # Indicate use of reg conv2d (no subarrays)
             output, a_loss = self.partial_sum_conv(qa, qw)#[128,16,28,28]  [64,16,3,3]

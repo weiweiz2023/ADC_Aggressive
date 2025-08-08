@@ -27,7 +27,7 @@ def get_parser():
                         help='Choose a model to run the network on {resnet20, resnet_18}')
     parser.add_argument('--dataset', dest='dataset', help='Choose a dataset to run the network on from'
                                                           '{MNIST, CIFAR10}', default='MNIST', type=str)
-    parser.add_argument('--experiment_state', default='PTQAT', type=str, metavar='PATH',
+    parser.add_argument('--experiment_state', default='pretraining', type=str, metavar='PATH',
                         help='What are we doing right now? options: [pretraining, pruning, PTQAT, inference, xbar_inference]')
     parser.add_argument('--run-info', default='', type=str,
                         help='Anything to add to the run name for clarification? e.g. \"test1ab\"')
@@ -56,15 +56,15 @@ def get_parser():
     ## QAT / Model Parameters
     ##################################################################################################################
     # xbar precision params
-    parser.add_argument('--w_bits', default=4, type=int, metavar='N',
+    parser.add_argument('--w_bits', default=0, type=int, metavar='N',
                         help='Number of weight bits (default: 1)')
     parser.add_argument('--w_bits_per_slice', default=1, type=int, metavar='N',
                         help='Number of weight bits per slice (default: 1), x <= 0 means full precision')
-    parser.add_argument('--a_bits', default=4, type=int, metavar='N',
+    parser.add_argument('--a_bits', default=0, type=int, metavar='N',
                         help='Number of input bits (default: 1)')
     parser.add_argument('--a_bits_per_stream', default=1, type=int, metavar='N',
                         help='Number of input bits per slice (default: 1), x <= 0 means full precision')
-    parser.add_argument('--subarray-size', default=32, type=int, metavar='N',
+    parser.add_argument('--subarray-size', default=128, type=int, metavar='N',
                         help='Size of partial sum subarrays, x <= 0 means no partial sums')
     parser.add_argument('--slice-init', dest='slice_init', default=True,
                         type=bool, help='If W slices are present, create them at initialization of model')

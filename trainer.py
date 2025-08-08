@@ -149,8 +149,6 @@ def main():
         lr_scheduler.step()
 
         prec1 = validate(val_loader, model, criterion)
-        
-        is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
         # Remove pruning reparameterization before saving
         if args.experiment_state == "pruning":
@@ -161,7 +159,7 @@ def main():
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'best_prec1': best_prec1,
-            }, is_best, filename=os.path.join(model_save_dir))
+            }, filename=os.path.join(model_save_dir))
         print("Epoch Time: " + str(time.time() - start_epoch))
         Log_Vals.write(str(prec1) + '\n')
     print("Total Time: " + str(time.time() - start_train))
