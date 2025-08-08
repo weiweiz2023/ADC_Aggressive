@@ -10,9 +10,9 @@ def get_parser():
     ##################################################################################################################
     parser.add_argument('--pretrain_epochs', default=30, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('--pruning_epochs', default=30, type=int, metavar='N',
+    parser.add_argument('--pruning_epochs', default=5, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('--PTQAT_epochs', default=30, type=int, metavar='N',
+    parser.add_argument('--PTQAT_epochs', default=10, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('-b', '--batch-size', default=128, type=int,
                         metavar='N', help='mini-batch size (default: 128)')
@@ -59,12 +59,12 @@ def get_parser():
     ##################################################################################################################
     ## QAT / Model Parameters
     ##################################################################################################################
-    # xbar precision params
-    parser.add_argument('--w_bits', default=0, type=int, metavar='N',
+    # XBAR precision params
+    parser.add_argument('--w_bits', default=4, type=int, metavar='N',
                         help='Number of weight bits (default: 1)')
     parser.add_argument('--w_bits_per_slice', default=1, type=int, metavar='N',
                         help='Number of weight bits per slice (default: 1), x <= 0 means full precision')
-    parser.add_argument('--a_bits', default=0, type=int, metavar='N',
+    parser.add_argument('--a_bits', default=4, type=int, metavar='N',
                         help='Number of input bits (default: 1)')
     parser.add_argument('--a_bits_per_stream', default=1, type=int, metavar='N',
                         help='Number of input bits per slice (default: 1), x <= 0 means full precision')
@@ -72,8 +72,8 @@ def get_parser():
                         help='Size of partial sum subarrays, x <= 0 means no partial sums')
     parser.add_argument('--slice-init', dest='slice_init', default=True,
                         type=bool, help='If W slices are present, create them at initialization of model')
-    # adc params
-
+    
+    # ADC params
     parser.add_argument('--Gon', default=1/10, type=int, metavar='N',
                         help='max conductance of ADC')
     parser.add_argument('--Goff', default=1/1000, type=int, metavar='N',
@@ -98,7 +98,7 @@ def get_parser():
                         help='ADC Votalge')                    
     # other?
     parser.add_argument('--wa-stoch-round', dest='wa_stoch_round', default=True, 
-                        help='Select whether stochaastic or deterministic rounding is used for ADC')
+                        help='Select whether stochaastic or deterministic rounding is used for inputs/weights')
     parser.add_argument('--conv_prune_rate', default=0.6, type=float,
                         help='Set prune rate for')
     parser.add_argument('--linear_prune_rate', default=0.6, type=float,
