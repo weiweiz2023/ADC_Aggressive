@@ -57,12 +57,10 @@ class BasicBlock_Quant(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         self.shortcut = nn.Sequential()
         
-        if arch_args.pruning:
+        if arch_args.experiment_state == "pruning":
             self.conv1 = nn.Sequential(prune(arch_args.conv_prune_rate), self.conv1)
             self.conv2 = nn.Sequential(prune(arch_args.conv_prune_rate), self.conv2)
-        self.experiment_state= arch_args.experiment_state   
-        self.linear_prune_rate = arch_args.linear_prune_rate
-        self.conv_prune_rate = arch_args.conv_prune_rate  
+
         if stride != 1 or in_planes != planes:           
             self.shortcut = LambdaLayer(lambda x: F.pad(x[:, :, ::2, ::2], (0, 0, 0, 0, (planes )//4, (planes )//4),
                                                       "constant", 0))
@@ -93,13 +91,16 @@ class ResNet(nn.Module):
         self.experiment_state= arch_args.experiment_state 
         self.conv1 = nn.Conv2d(in_channels, start_chan, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(start_chan)
+        
         self.layer1 = self._make_layer(block, start_chan, num_blocks[0], arch_args, stride=1)
         self.layer2 = self._make_layer(block, start_chan * 2, num_blocks[1], arch_args, stride=2)
         self.layer3 = self._make_layer(block, start_chan * 4, num_blocks[2], arch_args, stride=2)
         self.layer4 = self._make_layer(block, start_chan * 8, num_blocks[2], arch_args, stride=2)
-        self.bn2 = nn.BatchNorm1d(start_chan * 2 ** (len(num_blocks) ))
-        self.linear = nn.Linear(start_chan * 2 ** (len(num_blocks) ), num_classes)
-        #self.linear = nn.Linear(start_chan*8 * block.expansion, num_classes)
+        self.bn2 = nn.BatchNorm1d(start_chan * 2 ** (len(num_blocks)))
+        
+        self.classifier = nn.Linear(start_chan * 2 ** (len(num_blocks)), num_classes)
+        if arch_args.experiment_state == "pruning":
+            self.classifier = nn.Sequential(prune(arch_args.linear_prune_rate), self.classifier)
 
         self.apply(_weights_init)
 
@@ -119,11 +120,10 @@ class ResNet(nn.Module):
         [out, L1] = self.layer1([out, 0])
         [out, L2] = self.layer2([out, L1])
         [out, L3] = self.layer3([out, L2])  
-        [out, L4] = self.layer4([out, L3])################
+        [out, L4] = self.layer4([out, L3])
         out = F.avg_pool2d(out, out.size()[3])  # change to max pool?
         out = out.view(out.size(0), -1)
         out = self.bn2(out)
-        if self.experiment_state == "pruning":
-            out = prune(out,self.linear_prune_rate)
-        out = self.linear(out)
-        return out, L4 * 0.1#######################
+        out = self.classifier(out)
+        return out, L4 * 0.1  
+        """TODO: Create architecture argument for this loss term scalar"""
