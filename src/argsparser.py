@@ -24,6 +24,7 @@ def get_parser():
                         metavar='W', help='weight decay (default: 1e-4)')
     parser.add_argument('--lr', type=float, default=0.01, 
                         help='learning rate (default: 0.01)')
+    
     ##################################################################################################################
     ## High-level trainer parameters
     ##################################################################################################################
@@ -36,8 +37,6 @@ def get_parser():
     parser.add_argument('--run-info', default='', type=str,
                         help='Anything to add to the run name for clarification? e.g. \"test1ab\"')
    
-    #parser.add_argument('--quantized', dest='quantized', default=False,
-     #                   type=bool, help='Select whether use the quantized conv layer or not') 
     ##################################################################################################################
     ## Saving/Loading Data
     ##################################################################################################################
@@ -96,7 +95,7 @@ def get_parser():
                         type=bool, help='Use a unique ADC for each subarray?')
     parser.add_argument('--Vmax', default=1, type=int,    
                         help='ADC Votalge')                    
-    # other?
+    # Other?
     parser.add_argument('--wa-stoch-round', dest='wa_stoch_round', default=True, 
                         help='Select whether stochaastic or deterministic rounding is used for inputs/weights')
     parser.add_argument('--conv_prune_rate', default=0.6, type=float,
@@ -105,8 +104,9 @@ def get_parser():
                         help='Set prune rate for')
     parser.add_argument('--viz-comp-graph', default=False, type=bool, 
                         help='use torchviz to show model computational graph fwd/bkwd')
+    
     ##################################################################################################################
-    ## Other parameters
+    ## Miscellaneous parameters
     ##################################################################################################################
     parser.add_argument('--print-batch-info', dest='print_batch_info',
                         help='Set to true if you want to see per batch accuracy',

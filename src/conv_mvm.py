@@ -194,9 +194,9 @@ class quantized_conv(nn.Module):
 
         if self.experiment_state == "xbar_inference" and self.num_subarrays > 0:
             output, a_loss = self.inference_conv(qa, qw)     
-        elif self.experiment_state == "PTQAT" and self.num_subarrays > 0:  # use reg conv2d (no subarrays)
+        elif self.experiment_state == "PTQAT" or self.num_subarrays > 0:  
             output, a_loss = self.partial_sum_conv(qa, qw)  # [128,16,28,28]  [64,16,3,3]
-        else:
+        else:  # use reg conv2d (no subarrays)
             conv_out = F.conv2d(qa, qw, bias=None, stride=self.stride, padding=self.padding, 
                             dilation=self.dilation, groups=self.groups)
             output, a_loss = self.ADC(conv_out)
