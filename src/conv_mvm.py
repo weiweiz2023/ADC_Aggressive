@@ -74,11 +74,11 @@ class quantized_conv(nn.Module):
         a_states = 2 ** self.a_bits_per_stream
         self.shared_adc = args.shared_adc
         if self.shared_adc:
-            self.ADC = Nbit_ADC(self.adc_prec, self.w_slices, self.a_streams, self.adc_static_step, self.save_adc_inputs,
+            self.ADC = Nbit_ADC(self.adc_prec, w_states, a_states, self.adc_static_step, self.save_adc_inputs,
                                 self.adc_custom_loss, self.adc_stoch_round, self.adc_grad_filter, self.adc_pos_only)
         else:
             # Create an ADC for each partial sum
-            self.ADCs = nn.ModulesList(Nbit_ADC(self.adc_prec, self.w_slices, self.a_streams, self.adc_static_step, self.save_adc_inputs,
+            self.ADCs = nn.ModulesList(Nbit_ADC(self.adc_prec, w_states, a_states, self.adc_static_step, self.save_adc_inputs,
                                        self.adc_custom_loss, self.adc_stoch_round, self.adc_grad_filter, self.adc_pos_only) for i in range(self.num_subarrays))
         
     @staticmethod
@@ -110,7 +110,7 @@ class quantized_conv(nn.Module):
         Vmax = self.Vmax
         Gon = self.Gon
         Goff = self.Goff
-      #  Comp_factor =a_bits_per_stream*w_bits_per_slice/((Gon-Goff)*Vmax)
+        #  Comp_factor =a_bits_per_stream*w_bits_per_slice/((Gon-Goff)*Vmax)
         G_pos, G_neg,G_pos_dummy, G_neg_dummy = self.weight_to_diff_conductance(weights, Gon=1, Goff=1/1000)   
         image_map = F.unfold(inputs, self.kernel_size, self.dilation, 
                          self.padding, self.stride)  # [batch, in_ch*K*K, H_out*W_out]       

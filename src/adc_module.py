@@ -42,9 +42,11 @@ class Nbit_ADC(nn.Module):
             y = (torch.round(scale_offset) * self.step_size).detach() + x - x.detach()
 
         if self.pos_only:
-            y = y.clamp(0, 2 ** self.bits - 1)
+            (min_val, max_val) = (0, 2 ** self.bits - 1)
         else:
-            y = y.clamp(-2 ** (self.bits - 1), 2 ** (self.bits - 1) - 1)
+            (min_val, max_val) = (-2 ** (self.bits - 1), 2 ** (self.bits - 1) - 1)
+            
+        y = y.clamp(min_val, max_val)
 
         # Do we want a custom loss term accumulated?
         loss = 0    
@@ -63,7 +65,7 @@ class Nbit_ADC(nn.Module):
                 np.savetxt(f, array_to_write, delimiter=",")
         
         if self.grad_filter:
-            y=gradientFilter.apply(y)
+            y=gradientFilter.apply(y, min_val, max_val)
             y.requires_grad_(True)
         return y, loss
 
@@ -81,9 +83,9 @@ class stochasticRound(Function):
 
 class gradientFilter(Function):
     @staticmethod
-    def forward(ctx, input_tens, bits):
-        ctx.max_val = 2 ** (bits -1) - 1
-        ctx.min_val = -2 ** (bits -1)
+    def forward(ctx, input_tens, min_val, max_val):
+        ctx.max_val = max_val
+        ctx.min_val = min_val
         ctx.save_for_backward(input_tens)
         return input_tens
     
@@ -98,7 +100,7 @@ class gradientFilter(Function):
         grad_out = torch.where(input_tens > ctx.min_val, scale3*grad_output, grad_out)
         grad_out = torch.where(input_tens > ctx.max_val, scale1*grad_output, grad_out)
 
-        return grad_out, None
+        return grad_out, None, None
     
 
 

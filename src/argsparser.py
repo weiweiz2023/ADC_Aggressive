@@ -28,7 +28,7 @@ def get_parser():
     parser.add_argument('--dataset', dest='dataset', help='Choose a dataset to run the network on from'
                                                           '{MNIST, CIFAR10}', default='MNIST', type=str)
     parser.add_argument('--experiment_state', default='PTQAT', type=str, metavar='PATH',
-                        help='What are we doing right now? options: [pretraining, pruning,PTQAT,inference]')
+                        help='What are we doing right now? options: [pretraining, pruning, PTQAT, inference, xbar_inference]')
     parser.add_argument('--run-info', default='', type=str,
                         help='Anything to add to the run name for clarification? e.g. \"test1ab\"')
    

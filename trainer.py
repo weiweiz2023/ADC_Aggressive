@@ -116,10 +116,7 @@ def main():
     criterion = nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, 
                                  weight_decay=args.weight_decay)
-    # optimizer = torch.optim.SGD(model.parameters(), args.lr,
-    #                             momentum=args.momentum,
-    #                             weight_decay=args.weight_decay)
-
+    
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0, last_epoch=-1)
 
     # print(model.modules)  # Print all model components/layers
@@ -131,23 +128,19 @@ def main():
         if args.experiment_state == "inference" or args.save_adc:
             validate(val_loader, model, criterion)
             exit()
-
-        
-    if (len(args.resume) > 5) and args.experiment_state == "inference":
-        model.eval() 
-        with torch.no_grad():
+            
+        if args.experiment_state == "xbar_inference":
             validate(val_loader, model, criterion)
-        exit()
+            exit()
         
-    if (len(args.resume) > 5) and args.experiment_state == "PTQAT":        
-       validate(val_loader, model, criterion)
-       exit()
-     
-
+        if args.experiment_state == "PTQAT": 
+            pass       
 
     # begin epoch training loop
     for epoch in range(0, args.epochs):
         start_epoch = time.time()
+        model.train()
+        
         if args.experiment_state == "pruning":
             prune_model(model, args.conv_prune_rate, args.linear_prune_rate)
         print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
@@ -155,16 +148,14 @@ def main():
         train(train_loader, model, criterion, optimizer, epoch)
         lr_scheduler.step()
 
-        # evaluate on validation set
         prec1 = validate(val_loader, model, criterion)
-
-        # remember best prec@1 and save checkpoint
+        
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
         # Remove pruning reparameterization before saving
         if args.experiment_state == "pruning":
             model = apply_pruning(model)  # <-- Apply before saving
-        #if is_best:
+
         save_checkpoint({
                 'model': model,
                 'epoch': epoch + 1,
@@ -202,8 +193,11 @@ def train(train_loader, model, criterion, optimizer, epoch):
         loss = criterion(output, target_var) + loss_add
         
         if args.viz_comp_graph:
+            print("Visualizing computational graph, please wait ...")
             torchviz.make_dot(output).render("./saved/torchviz_out", format="png")
+            print("Finished visualizing computational graph 1")
             torchviz.make_dot(loss).render("./saved/torchviz_loss", format="png")
+            print("Finished visualizing computational graph 2")
             exit()
 
         # compute gradient and do SGD step
@@ -244,6 +238,7 @@ def validate(val_loader, model, criterion):
 
     # switch to evaluate mode
     end = time.time()
+    model.eval()
     for i, (input, target) in enumerate(val_loader):
         last_finished_batch = args.skip_to_batch
         if i < last_finished_batch:
@@ -282,7 +277,7 @@ def validate(val_loader, model, criterion):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, filename='checkpoint.pth.tar'):
     """Save the training model"""
     torch.save(state, filename, pickle_module=dill)
 
