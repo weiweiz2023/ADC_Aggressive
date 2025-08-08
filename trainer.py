@@ -127,9 +127,10 @@ def main():
 
     print(f"Time @ start: {time.time()-start_time}")
 
-    if (len(args.resume) > 5) and args.save_adc:        
-        validate(val_loader, model, criterion)
-        exit()
+    if (len(args.resume) > 5):
+        if args.experiment_state == "inference" or args.save_adc:
+            validate(val_loader, model, criterion)
+            exit()
 
         
     if (len(args.resume) > 5) and args.experiment_state == "inference":
@@ -137,9 +138,10 @@ def main():
         with torch.no_grad():
             validate(val_loader, model, criterion)
         exit()
-    #if (len(args.resume) > 5) and args.experiment_state == "PTQAT":        
-    #    validate(val_loader, model, criterion)
-   #     exit()
+        
+    if (len(args.resume) > 5) and args.experiment_state == "PTQAT":        
+       validate(val_loader, model, criterion)
+       exit()
      
 
 

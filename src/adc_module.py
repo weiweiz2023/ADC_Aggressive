@@ -55,16 +55,16 @@ class Nbit_ADC(nn.Module):
         # Logging (histograms)
         if (self.save and (random.random() < 0.003)):  
             print(f"Saving ADC inputs...")
-            with open("./saved/hist_csvs/testLossGradNoScale_input.csv", "a") as f:
+            with open("./saved/hist_csvs/test_nofilter_input.csv", "a") as f:
                 array_to_write = (x).flatten().cpu().numpy()
                 np.savetxt(f, array_to_write, delimiter=",")
-            with open("./saved/hist_csvs/testLossGradNoScale_output.csv", "a") as f:
+            with open("./saved/hist_csvs/test_nofilter_output.csv", "a") as f:
                 array_to_write = (y).flatten().cpu().numpy()
                 np.savetxt(f, array_to_write, delimiter=",")
         
         if self.grad_filter:
-            gradientFilter.apply(y)
-
+            y=gradientFilter.apply(y)
+            y.requires_grad_(True)
         return y, loss
 
 class stochasticRound(Function):
@@ -81,13 +81,25 @@ class stochasticRound(Function):
 
 class gradientFilter(Function):
     @staticmethod
-    def forward(ctx, input_tens):
+    def forward(ctx, input_tens, bits):
+        ctx.max_val = 2 ** (bits -1) - 1
+        ctx.min_val = -2 ** (bits -1)
         ctx.save_for_backward(input_tens)
         return input_tens
     
     @staticmethod
     def backward(ctx, grad_output):
         input_tens, = ctx.saved_tensors
-        grad_out = (.8 * torch.abs(torch.sin(input_tens * torch.pi)) + .2) * grad_output
+        scale1 = torch.clamp(0.1 + torch.log(input_tens-ctx.min_val) / 2.5, min=0, max=1.0)
+        scale2 = torch.clamp(0.1 + torch.log(-(input_tens+ctx.min_val)) / 2.5, min=0, max=1.0)
+        scale3 = torch.clamp(torch.abs(torch.sin(input_tens*torch.pi))*0.9+0.1, min=0, max=1.0)
         
+        grad_out = torch.where(input_tens < ctx.min_val, scale2*grad_output, 0)
+        grad_out = torch.where(input_tens > ctx.min_val, scale3*grad_output, grad_out)
+        grad_out = torch.where(input_tens > ctx.max_val, scale1*grad_output, grad_out)
+
         return grad_out, None
+    
+
+
+ 

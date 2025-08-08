@@ -8,7 +8,7 @@ def get_parser():
     ##################################################################################################################
     ## Regular Hyperparameters
     ##################################################################################################################
-    parser.add_argument('--epochs', default=20, type=int, metavar='N',
+    parser.add_argument('--epochs', default=30, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('-b', '--batch-size', default=128, type=int,
                         metavar='N', help='mini-batch size (default: 128)')
@@ -24,15 +24,16 @@ def get_parser():
     ## High-level trainer parameters
     ##################################################################################################################
     parser.add_argument('--model', dest='model', default='resnet20', type=str, 
-                        help='Choose a model to run the network on {resnet20, resnet18}')
+                        help='Choose a model to run the network on {resnet20, resnet_18}')
     parser.add_argument('--dataset', dest='dataset', help='Choose a dataset to run the network on from'
                                                           '{MNIST, CIFAR10}', default='MNIST', type=str)
-    parser.add_argument('--experiment-state', default='', type=str, metavar='PATH',
-                        help='What are we doing right now? options: [pretraining, pruning, PTQAT, xbar-inference]')
+    parser.add_argument('--experiment_state', default='PTQAT', type=str, metavar='PATH',
+                        help='What are we doing right now? options: [pretraining, pruning,PTQAT,inference]')
     parser.add_argument('--run-info', default='', type=str,
                         help='Anything to add to the run name for clarification? e.g. \"test1ab\"')
    
-     
+    #parser.add_argument('--quantized', dest='quantized', default=False,
+     #                   type=bool, help='Select whether use the quantized conv layer or not') 
     ##################################################################################################################
     ## Saving/Loading Data
     ##################################################################################################################
@@ -49,7 +50,7 @@ def get_parser():
                         type=int, default=10)
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
-    parser.add_argument('--resume', type=str, default='', help='path to checkpoint to resume from')
+    parser.add_argument('--resume', type=str, default='/home/weiweiz/Documents/WW_02/ADC_aggressive/saved/models/_resnet20_MNIST_3_128_0p01_pruning_4_1_True_4_1_False_4_False_True_True_True_True_True_True.th', help='path to checkpoint to resume from')
 
     ##################################################################################################################
     ## QAT / Model Parameters
@@ -63,36 +64,41 @@ def get_parser():
                         help='Number of input bits (default: 1)')
     parser.add_argument('--a_bits_per_stream', default=1, type=int, metavar='N',
                         help='Number of input bits per slice (default: 1), x <= 0 means full precision')
-    parser.add_argument('--subarray-size', default=64, type=int, metavar='N',
+    parser.add_argument('--subarray-size', default=32, type=int, metavar='N',
                         help='Size of partial sum subarrays, x <= 0 means no partial sums')
     parser.add_argument('--slice-init', dest='slice_init', default=True,
                         type=bool, help='If W slices are present, create them at initialization of model')
     # adc params
-    parser.add_argument('--adc-prec', default=4, type=int, metavar='N',
+
+    parser.add_argument('--Gon', default=1/10, type=int, metavar='N',
+                        help='max conductance of ADC')
+    parser.add_argument('--Goff', default=1/1000, type=int, metavar='N',
+                        help='min conductance of ADC')
+    parser.add_argument('--adc-prec', default=1, type=int, metavar='N',
                         help='ADC precision for quantized layers, x <= 0 means full precision')
     parser.add_argument('--save-adc', dest='save_adc', default=False,
                         type=bool, help='Select whether the ADC inputs are saved for analysis')
-    parser.add_argument('--adc-grad-filter', dest='adc_grad_filter', default=False,
+    parser.add_argument('--adc-grad-filter', dest='adc_grad_filter', default=True,
                         type=bool, help='Select whether an STE (False) or halfsine (True) is used for ADC backprop')
-    parser.add_argument('--adc-round-method', dest='adc_stoch_round', default=True,
+    parser.add_argument('--adc-round-method', dest='adc_stoch_round', default=False,
                         type=bool, help='Select whether stochaastic or deterministic rounding is used for ADC')
-    parser.add_argument('--adc-pos-only', dest='adc_pos_only', default=True,
+    parser.add_argument('--adc-pos-only', dest='adc_pos_only', default=False,
                         type=bool, help='Select whether [0, max] (True) or [-max, max-1] (False) is used')
     parser.add_argument('--adc-static-step', dest='adc_static_step', default=True,
                         type=bool, help='Select whether a static step size is used for ADC quant')
-    parser.add_argument('--adc-custom-loss', dest='adc_custom_loss', default=True,
+    parser.add_argument('--adc-custom-loss', dest='adc_custom_loss', default=False,
                         type=bool, help='Use custom loss additive term from ADC evals')
     parser.add_argument('--adc-shared', dest='shared_adc', default=True,
                         type=bool, help='Use a unique ADC for each subarray?')
+    parser.add_argument('--Vmax', default=1, type=int,    
+                        help='ADC Votalge')                    
     # other?
     parser.add_argument('--wa-stoch-round', dest='wa_stoch_round', default=True, 
                         help='Select whether stochaastic or deterministic rounding is used for ADC')
-    parser.add_argument('--conv_prune_rate', default=0.2, type=float,
+    parser.add_argument('--conv_prune_rate', default=0.6, type=float,
                         help='Set prune rate for')
-    parser.add_argument('--linear_prune_rate', default=0.1, type=float,
+    parser.add_argument('--linear_prune_rate', default=0.6, type=float,
                         help='Set prune rate for')
-    parser.add_argument('--pruning', default='True', type=str,
-                        help='pruning  ? True/False')
     parser.add_argument('--viz-comp-graph', default=False, type=bool, 
                         help='use torchviz to show model computational graph fwd/bkwd')
     ##################################################################################################################
