@@ -13,7 +13,7 @@ from src.resnet import ResNet
 import numpy as np
 import torchviz
 from src.utils import Timer
-from src.pruning import prune_model
+from src.pruning import prune_model , apply_pruning
 
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 args = argsparser.get_parser().parse_args()
@@ -127,9 +127,21 @@ def main():
 
     print(f"Time @ start: {time.time()-start_time}")
 
-    if (len(args.resume) > 5) and args.save_adc:
+    if (len(args.resume) > 5) and args.save_adc:        
         validate(val_loader, model, criterion)
         exit()
+
+        
+    if (len(args.resume) > 5) and args.experiment_state == "inference":
+        model.eval() 
+        with torch.no_grad():
+            validate(val_loader, model, criterion)
+        exit()
+    #if (len(args.resume) > 5) and args.experiment_state == "PTQAT":        
+    #    validate(val_loader, model, criterion)
+   #     exit()
+     
+
 
     # begin epoch training loop
     for epoch in range(0, args.epochs):
@@ -147,9 +159,11 @@ def main():
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
-
-        if is_best:
-            save_checkpoint({
+        # Remove pruning reparameterization before saving
+        if args.experiment_state == "pruning":
+            model = apply_pruning(model)  # <-- Apply before saving
+        #if is_best:
+        save_checkpoint({
                 'model': model,
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
