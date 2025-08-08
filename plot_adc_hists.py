@@ -5,19 +5,16 @@ import matplotlib.pyplot as plt
 def plot_hists():
     # version 2 captures before the round
     files = [
-        "./saved/hist_csvs/testNoLoss_scaled.csv",
-        "./saved/hist_csvs/testNoLoss_output.csv",
-        "./saved/hist_csvs/testLoss_scaled.csv",
-        "./saved/hist_csvs/testLoss_output.csv",
-        "./saved/hist_csvs/testLossGrad_scaled.csv",
-        "./saved/hist_csvs/testLossGrad_output.csv",
-        "./saved/hist_csvs/testLossGradNoScale_input.csv",
-        "./saved/hist_csvs/testLossGradNoScale_output.csv",
+       
+        "/home/weiweiz/Documents/WW_02/ADC_aggressive/saved/hist_csvs/test_filter_input.csv",
+        "/home/weiweiz/Documents/WW_02/ADC_aggressive/saved/hist_csvs/test_filter_output.csv",
+        #"/home/weiweiz/Documents/WW_02/ADC_aggressive/saved/hist_csvs/test_nofilter_input.csv",
+       # "/home/weiweiz/Documents/WW_02/ADC_aggressive/saved/hist_csvs/test_nofilter_output.csv",
+        
     ]
-    names = ["Vanilla Scaled", "Vanilla ADC-Out",
-             "Loss Scaled", "Loss ADC Out",
-             "Loss + Grad Scaled", "Loss + Grad ADC-Out",
-             "Loss + Grad - Scale Scaled", "Loss + Grad - Scale ADC-Out",
+    names = ["gradientfilter_ADC-input", " gradientfilter_ADC-Output",
+        #     "ADC-input", " ADC-Output",
+             
              ]
 
     n = len(files)
@@ -31,6 +28,8 @@ def plot_hists():
         # counts, bins = np.histogram(array, bins=100)
         axs[i].hist(array, bins=100)
         axs[i].set_title(files[i] if len(names) == 0 else names[i])
+        axs[i].set_xlabel("Value")   
+        axs[i].set_ylabel("Frequency")  
 
     plt.show()
     fig.savefig('./saved/hist_bad2.png', dpi=300, bbox_inches='tight')
