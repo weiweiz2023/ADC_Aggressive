@@ -8,7 +8,11 @@ def get_parser():
     ##################################################################################################################
     ## Regular Hyperparameters
     ##################################################################################################################
-    parser.add_argument('--epochs', default=30, type=int, metavar='N',
+    parser.add_argument('--pretrain_epochs', default=30, type=int, metavar='N',
+                        help='number of total epochs to run')
+    parser.add_argument('--pruning_epochs', default=30, type=int, metavar='N',
+                        help='number of total epochs to run')
+    parser.add_argument('--PTQAT_epochs', default=30, type=int, metavar='N',
                         help='number of total epochs to run')
     parser.add_argument('-b', '--batch-size', default=128, type=int,
                         metavar='N', help='mini-batch size (default: 128)')

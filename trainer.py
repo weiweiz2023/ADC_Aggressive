@@ -18,10 +18,13 @@ from src.pruning import prune_model , apply_pruning
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 args = argsparser.get_parser().parse_args()
 best_prec1 = 0
+epochs = {"PTQAT" : args.PTQAT_epochs,
+          "pretraining" : args.pretrain_epochs,
+          "pruning" : args.pruning_epochs}[args.experiment_state]
 
 model_params = [args.model,
                 args.dataset,
-                args.epochs,
+                epochs,
                 args.batch_size,
                 args.learning_rate,
                 args.experiment_state,
@@ -91,7 +94,7 @@ def main():
         model = ResNet(num_blocks, 3, args, start_chan).to(device)
     else:
         raise NotImplementedError("Not a valid dataset for current codebase")
-
+    
     # model = model.half()
     print(f"Time @ model load: {time.time()-start_time}")
 
@@ -117,7 +120,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, 
                                  weight_decay=args.weight_decay)
     
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0, last_epoch=-1)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=0, last_epoch=-1)
 
     # print(model.modules)  # Print all model components/layers
     start_train = time.time()
@@ -125,19 +128,12 @@ def main():
     print(f"Time @ start: {time.time()-start_time}")
 
     if (len(args.resume) > 5):
-        if args.experiment_state == "inference" or args.save_adc:
+        if args.experiment_state.find("inference") > -1 or args.save_adc:
             validate(val_loader, model, criterion)
             exit()
             
-        if args.experiment_state == "xbar_inference":
-            validate(val_loader, model, criterion)
-            exit()
-        
-        if args.experiment_state == "PTQAT": 
-            pass       
-
     # begin epoch training loop
-    for epoch in range(0, args.epochs):
+    for epoch in range(0, epochs):
         start_epoch = time.time()
         model.train()
         
