@@ -1,0 +1,5 @@
+cifar*
+MNIST*
+old*
+saved/models
+__pycache__
