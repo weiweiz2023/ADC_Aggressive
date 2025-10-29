@@ -1,204 +1,187 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Function
-
-# Custom blocks (maybe change?)
-from src.adc_module import Nbit_ADC
-from src.weight_quant import BitSliceQuantSTE, STE_Quantize
-
+        
 class quantized_conv(nn.Module):
     def __init__(self, in_channels, out_channels, arch_args, 
                  kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=None):
         super(quantized_conv, self).__init__()
-        args = arch_args
-        # arch_params order -> [wb, wb/slice, ab, ab/slice, subarray_size, w_stoch_round
-        #                       adc_prec, adc_grad_filter, save_adc, adc_stoch_round, 
-        #                       adc_pos_only, adc_static_step, acm_fixed_bits, acm_frac_bits  
-        #                       adc_custom_loss, stream_init, shared_adc]
-        """TODO: ACM implementation for fractional representation"""
-
-        # Weight / Crossbar items
         
-        self.w_bits = args.w_bits
-        self.w_bits_per_slice = args.w_bits_per_slice
-        self.w_slices = int(self.w_bits / max(self.w_bits_per_slice, 1))
-        self.wa_stoch_round = args.wa_stoch_round
-        subarray_size = args.subarray_size
-        if subarray_size <= 0:
-            self.num_subarrays = 0
-        else:
-            self.num_subarrays = self.get_chunks(in_channels * (kernel_size ** 2), subarray_size)
+        self.weight_bits = arch_args.weight_bits
+        self.weight_bits_per_slice = arch_args.bit_slice
+        self.weight_slices = max(1, self.weight_bits // max(self.weight_bits_per_slice, 1))
+        self.weight_frac_bits = arch_args.weight_bit_frac
         
-        # input vector items
-        self.a_bits = args.a_bits
-        self.a_bits_per_stream = args.a_bits_per_stream
-        self.a_streams = int(self.a_bits / max(self.a_bits_per_stream, 1))
-        self.Vmax= args.Vmax
-        # ADC items
-        self.Goff =args.Goff
-        self.Gon = args.Gon
-        self.adc_prec = args.adc_prec
-        self.adc_grad_filter = args.adc_grad_filter
-        self.save_adc_inputs = args.save_adc
-        self.adc_stoch_round = args.adc_stoch_round
-        self.adc_static_step = args.adc_static_step
-        self.adc_pos_only = args.adc_pos_only
-        self.adc_custom_loss = args.adc_custom_loss
+        self.input_bits = arch_args.input_bits
+        self.input_bits_per_stream = arch_args.bit_stream
+        self.input_streams = max(1, self.input_bits // max(self.input_bits_per_stream, 1))
+        self.input_frac_bits = arch_args.input_bit_frac
         
-        # Standard convolution params
+        # ADC
+        self.adc_bits = arch_args.adc_bit
+        self.adc_grad_filter = arch_args.adc_grad_filter
+        self.save_adc_data = arch_args.save_adc
+        self.adc_custom_loss = arch_args.adc_custom_loss
+        self.adc_reg_lambda = arch_args.adc_reg_lambda
+        
+        # conv
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.kernel_size = kernel_size
         self.stride = (stride, stride)
         self.padding = (padding, padding)
         self.dilation = (dilation, dilation)
         self.groups = groups
-        self.bias = bias
-        self.kernel_size = kernel_size
-    
-        # Other
-        self.experiment_state = args.experiment_state
-        # self.acm_bits = args.acm_fixed_bits
-        # self.acm_frac_bits = args.acm_frac_bits
-        # self.acm_int_bits = int(self.acm_bits - self.acm_frac_bits)
 
-        self.slice_init = args.slice_init
-        if self.slice_init:
-            self.weight = nn.Parameter(torch.empty(out_channels  , in_channels, kernel_size, kernel_size))
-          #  self.weight = nn.Parameter(torch.empty(out_channels * self.w_slices, in_channels, kernel_size, kernel_size))
+        self.layer_name = None  # 会在外部设置
+        self.stats_list = []
+
+        subarray_size = arch_args.subarray_size
+        if subarray_size <= 0:
+            self.num_subarrays = 0
         else:
-            self.weight = nn.Parameter(torch.empty(out_channels, in_channels, kernel_size, kernel_size))
+            total_inputs = in_channels * (kernel_size ** 2)
+            self.num_subarrays = max(1, (total_inputs + subarray_size - 1) // subarray_size)
+        
+        self.experiment_state = arch_args.experiment_state
+        
+        # Weight parameters
+        self.weight = nn.Parameter(torch.empty(out_channels, in_channels, kernel_size, kernel_size))
         nn.init.kaiming_normal_(self.weight)
-
-        w_states = 2 ** self.w_bits_per_slice
-        a_states = 2 ** self.a_bits_per_stream
-        self.shared_adc = args.shared_adc
-        if self.shared_adc:
-            self.ADC = Nbit_ADC(self.adc_prec, w_states, a_states, self.adc_static_step, self.save_adc_inputs,
-                                self.adc_custom_loss, self.adc_stoch_round, self.adc_grad_filter, self.adc_pos_only)
-        else:
-            # Create an ADC for each partial sum
-            self.ADCs = nn.ModulesList(Nbit_ADC(self.adc_prec, w_states, a_states, self.adc_static_step, self.save_adc_inputs,
-                                       self.adc_custom_loss, self.adc_stoch_round, self.adc_grad_filter, self.adc_pos_only) for i in range(self.num_subarrays))
         
-    @staticmethod
-    def get_chunks(in_channels, subarray_size):
-        return int(in_channels / subarray_size).__ceil__()
+       
+       
+        self.adc_pos = Nbit_ADC(self.adc_bits, self.weight_slices, self.input_streams, 
+                               self.save_adc_data, self.adc_grad_filter,
+                               self.adc_custom_loss, self.adc_reg_lambda)
+        self.adc_neg = Nbit_ADC(self.adc_bits, self.weight_slices, self.input_streams, 
+                               self.save_adc_data, self.adc_grad_filter,
+                               self.adc_custom_loss, self.adc_reg_lambda)
+        
+        # Precompute scale factors (as buffers for efficient device transfer)
+        stream_weights = 2.0 ** (torch.arange(self.input_streams) * self.input_bits_per_stream)
+        slice_weights = 2.0 ** (torch.arange(self.weight_slices) * self.weight_bits_per_slice)
+        
+        self.register_buffer('stream_scale', stream_weights.view(1, 1, 1, -1, 1))
+        self.register_buffer('slice_scale', slice_weights.view(1, 1, 1, 1, -1))
+    def _fix_input_sign_bit(self, ps):
+        """
+        修正补码input的符号位
+        
+        补码的符号位(MSB)权重应该是负的，但MVM按正数算了
+        解决：把包含符号位的stream取反
+        
+        Args:
+            ps: [batch, out_ch, patches, streams, slices]
+        Returns:
+            修正后的ps（现在input是真正的有符号数）
+        """
+        if self.input_bits_per_stream != 1:
+            print(f"⚠️ Warning: input bits_per_stream={self.input_bits_per_stream} != 1, "
+                  f"sign handling may be inaccurate")
+            return ps
+        
+        sign_stream_idx = self.input_bits - 1
+        result = ps.clone()
+        result[:, :, :, sign_stream_idx, :] = -ps[:, :, :, sign_stream_idx, :]
+        return result
     
-    def weight_to_diff_conductance(self, weight, Gon=1, Goff=1/1000):
-        w_bits_per_slice = self.w_bits_per_slice
-        Nstates_slice = 2**w_bits_per_slice-1
-        W_pos = weight.clamp(min=0)   
-        W_neg = abs(weight.clamp(max=0))  
+    def compute_vectorized_conv(self, inputs, weights):
+      
+        input_patches = F.unfold(inputs, self.kernel_size, self.dilation, self.padding, self.stride)
+        batch_size, patch_features, num_patches = input_patches.shape
+        input_streams  = VectorizedInputBitStreaming.apply(
+             input_patches, self.input_bits, self.input_frac_bits,
+             self.input_bits_per_stream, self.input_streams
+         )
+       
+        # Bit slicing for weights
+        pos_slices, neg_slices, norm_factor = VectorizedWeightBitSlicing.apply(
+            weights, self.weight_bits,   self.weight_bits_per_slice
+        )
         
-        G_pos =( W_pos*(Gon - Goff) / Nstates_slice + Goff )        
-        G_neg = ( W_neg*(Gon - Goff) / Nstates_slice + Goff )
+        pos_weight_matrix = pos_slices.view(self.out_channels, -1, self.weight_slices)
+        neg_weight_matrix = neg_slices.view(self.out_channels, -1, self.weight_slices)
         
-        pos_dummy=G_pos.clone()
-        neg_dummy=G_neg.clone()
-        with torch.no_grad():
-                  pos_dummy .fill_(1.0)  
-                  neg_dummy .fill_(1.0)
-        G_pos_dummy =  pos_dummy *  (Goff)
-        G_neg_dummy =  neg_dummy *  (Goff)
+        total_adc_loss = torch.tensor(0.0, device=inputs.device)
         
-        return G_pos, G_neg,G_pos_dummy, G_neg_dummy
-  
-    def inference_conv(self, inputs, weights):
-        a_bits_per_stream = self.a_bits_per_stream
-        w_bits_per_slice = self.w_bits_per_slice
-        Vmax = self.Vmax
-        Gon = self.Gon
-        Goff = self.Goff
-        #  Comp_factor =a_bits_per_stream*w_bits_per_slice/((Gon-Goff)*Vmax)
-        G_pos, G_neg,G_pos_dummy, G_neg_dummy = self.weight_to_diff_conductance(weights, Gon=1, Goff=1/1000)   
-        image_map = F.unfold(inputs, self.kernel_size, self.dilation, 
-                         self.padding, self.stride)  # [batch, in_ch*K*K, H_out*W_out]       
-        V_real = image_map * Vmax / a_bits_per_stream 
-        kernel_list = torch.chunk(V_real, chunks=self.num_subarrays, dim=1)  # List of [batch, sub_ch*K*K, H_out*W_out]
-        G_pos_list = torch.chunk(G_pos.flatten(1), chunks=self.num_subarrays, dim=1)  # List of [out_ch, sub_ch*K*K]
-        G_neg_list = torch.chunk(G_neg.flatten(1), chunks=self.num_subarrays, dim=1)
-        G_pos_dummy_list = torch.chunk(G_pos_dummy.flatten(1), chunks=self.num_subarrays, dim=1)
-        G_neg_dummy_list = torch.chunk(G_neg_dummy .flatten(1), chunks=self.num_subarrays, dim=1)
-
-        accum_out = 0
-        accum_loss = 0
-        for i, (G_pos_sub, G_neg_sub,G_pos_dummy_sub,G_neg_dummy_sub ) in enumerate(zip(G_pos_list, G_neg_list,G_pos_dummy_list, G_neg_dummy_list)):
-
-            working_kernel = kernel_list[i].transpose(-2, -1)
-        # Analog MVM: I_out = V * G+ - V * G-
-            I_pos_inter = F.linear(working_kernel, G_pos_sub)
-            I_pos_dummy = F.linear(working_kernel, G_pos_dummy_sub)    # [batch, H_out*W_out, out_ch]
-            I_pos = (I_pos_inter - I_pos_dummy)
-            I_neg_inter = F.linear(working_kernel, G_neg_sub)
-            I_neg_dummy = F.linear(working_kernel, G_neg_dummy_sub)
-            I_neg = (I_neg_inter - I_neg_dummy)  # [batch, H_out*W_out, out_ch]
-            I_out = (I_pos - I_neg).transpose(-2, -1)  # [batch, out_ch, H_out*W_out]
-        # Quantize with ADC
-            if self.shared_adc:
-                sub_out, loss = self.ADC(I_out)  # Shared ADC
-            else:
-                sub_out, loss = self.ADCs[i](I_out)  # Independent ADC per subarray
-
-            accum_out += sub_out
-            accum_loss += loss
-        recover_out = accum_out *1 #Comp_factor  
-        out_pixels = int((recover_out.size(dim=-1)) ** 0.5)
-        result = F.fold(recover_out, (out_pixels, out_pixels), (1, 1))  # [batch, out_ch, H_out, W_out]
-        return result, accum_loss
-    
-    def partial_sum_conv(self, inputs, weights):
-        image_map = F.unfold(inputs, self.kernel_size, self.dilation, self.padding, self.stride)
-        flattened_weights = torch.flatten(weights, 1)
-        kernel_list = torch.chunk(image_map, chunks=self.num_subarrays, dim=1) # input to each subarray
-        weight_list = torch.chunk(flattened_weights, chunks=self.num_subarrays, dim=1) # weight of each subarray
-
-        accum_out = 0
-        accum_loss = 0
-        for i, working_weight in enumerate(weight_list):
-            working_kernel = kernel_list[i].transpose(-2, -1)
-            linear_temp = F.linear(working_kernel, working_weight).transpose(-2, -1)
-            if self.shared_adc:
-                sub_out, loss = self.ADC(linear_temp)
-            else:
-                sub_out, loss = self.ADCs[i](linear_temp)
-            accum_out = accum_out + sub_out
-            accum_loss = accum_loss + loss
+        if self.num_subarrays > 1:
+            input_chunks = torch.chunk(input_streams, self.num_subarrays, dim=1)
+            pos_chunks = torch.chunk(pos_weight_matrix, self.num_subarrays, dim=1)
+            neg_chunks = torch.chunk(neg_weight_matrix, self.num_subarrays, dim=1)
             
-        # Handle weight slice positional scaling
-        accum_out = torch.stack(torch.split(accum_out, self.out_channels, 1), -1)
-        scalar_vector = 2 ** torch.arange(0, self.w_bits, device="cuda") / (2 ** self.w_bits - 1)
-        accum_out = (accum_out * scalar_vector).sum(-1)
+            chunk_results = []
+            for input_chunk, pos_chunk, neg_chunk in zip(input_chunks, pos_chunks, neg_chunks):
+                pos_results = torch.einsum('bfps,oft->bopst', input_chunk, pos_chunk)
+                neg_results = torch.einsum('bfps,oft->bopst', input_chunk, neg_chunk)
+                #  # 🆕 修正符号位
+                # pos_results = self._fix_input_sign_bit(pos_results)
+                # neg_results = self._fix_input_sign_bit(neg_results) 
+                
+                pos_quantized, pos_loss = self.adc_pos(pos_results)
+                neg_quantized, neg_loss = self.adc_neg(neg_results)               
+                
+                total_adc_loss = total_adc_loss + pos_loss + neg_loss
+              
+                pos_scaled = pos_quantized * self.stream_scale * self.slice_scale
+                neg_scaled = neg_quantized * self.stream_scale * self.slice_scale
+                
+                chunk_result = (pos_scaled - neg_scaled).sum(dim=(-2, -1))
+                chunk_results.append(chunk_result)
+            
+            final_output = torch.stack(chunk_results, dim=0).sum(dim=0)
+            
+        else:
+            pos_results = torch.einsum('bfps,oft->bopst', input_streams, pos_weight_matrix)
+            neg_results = torch.einsum('bfps,oft->bopst', input_streams, neg_weight_matrix)
+            # #  # 🆕 修正符号位
+            # pos_results = self._fix_input_sign_bit(pos_results)
+            # neg_results = self._fix_input_sign_bit(neg_results)
+            
+            pos_quantized, pos_loss = self.adc_pos(pos_results)
+            neg_quantized, neg_loss = self.adc_neg(neg_results)
+            
+            total_adc_loss = pos_loss + neg_loss
+         
+            pos_scaled = pos_quantized * self.stream_scale * self.slice_scale
+            neg_scaled = neg_quantized * self.stream_scale * self.slice_scale
+            
+            final_output = (pos_scaled - neg_scaled).sum(dim=(-2, -1))
         
-        out_pixels = int((accum_out.size(dim=-1)) ** 0.5)
-        result = F.fold(accum_out, (out_pixels, out_pixels), (1, 1))
-        return result, accum_loss 
+        
+        final_output = final_output * norm_factor   
+        weight_quant_scale = (2 ** self.weight_bits) - 1
+        final_output = final_output / weight_quant_scale
+        
+        input_max_int =  2 ** (self.input_bits) 
+        final_output = final_output / input_max_int
+        
+        output_h = self._calc_output_size(inputs.shape[2], 0)
+        output_w = self._calc_output_size(inputs.shape[3], 1)
+        output = F.fold(final_output, (output_h, output_w), (1, 1))
+        
+        return output, total_adc_loss
 
+    def _calc_output_size(self, input_size, dim):
+        kernel = self.kernel_size
+        pad = self.padding[dim]
+        dilation = self.dilation[dim]
+        stride = self.stride[dim]
+        return (input_size + 2 * pad - dilation * (kernel - 1) - 1) // stride + 1
+    
     def forward(self, inputs):
-        # Size = [out_channels, in_channels, kernel_height, kernel_width]
-        """TODO: Discuss the tensor dims of weights and how it changes with slice value"""
-        qw = self.weight
-        if self.w_bits != 0:
-            if self.slice_init:
-                qw = STE_Quantize.apply(self.weight, self.w_bits_per_slice)
-                """TODO: add stoch round? maybe as param to STE_quant?"""
-            else:
-                qw = BitSliceQuantSTE.apply(self.weight, self.w_bits)
+        if self.experiment_state == "PTQAT" and self.num_subarrays > 0:
+           ## if self.weight_bits > 0 or self.input_bits > 0:
+                output, adc_loss = self.compute_vectorized_conv(inputs, self.weight)
+                return output, adc_loss
+        elif self.experiment_state == "QAT":
 
-        # Size = [batch_size, in_channels * kern_h * kern_w, pixel_height * pixel_width]
-        """TODO: support non-zero bit-stream for training (currently impossible?)"""
-        qa = inputs
-        if self.a_bits != 0:  # 0 means infinite prec (float)
-            qa = STE_Quantize().apply(inputs, self.a_bits)
-            """TODO: add stoch round? maybe as param to STE_quant?"""
-
-        if self.experiment_state == "xbar_inference" and self.num_subarrays > 0:
-            output, a_loss = self.inference_conv(qa, qw)     
-        elif self.experiment_state == "PTQAT" or self.num_subarrays > 0:  
-            output, a_loss = self.partial_sum_conv(qa, qw)  # [128,16,28,28]  [64,16,3,3]
-        else:  # use reg conv2d (no subarrays)
-            conv_out = F.conv2d(qa, qw, bias=None, stride=self.stride, padding=self.padding, 
-                            dilation=self.dilation, groups=self.groups)
-            output, a_loss = self.ADC(conv_out)
-        
-        return output, a_loss
+                qa = InputQuantization.apply(inputs, self.input_bits, self.input_frac_bits)
+                qw = WeightQuantization.apply(self.weight, self.weight_bits)
+                output = F.conv2d(qa, qw , bias=None,
+                              stride=self.stride, padding=self.padding,
+                              dilation=self.dilation, groups=self.groups)
+              
+                return output, torch.tensor(0.0, device=inputs.device)
+        elif self.experiment_state == "pretraining" or self.experiment_state == "pruning":
+            output = F.conv2d(inputs, self.weight, bias=None,
+                          stride=self.stride, padding=self.padding,
+                          dilation=self.dilation, groups=self.groups)
+            return output, torch.tensor(0.0, device=inputs.device)
